@@ -2,7 +2,6 @@ package dev.langchain4j.engine;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -17,6 +16,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static dev.langchain4j.internal.Utils.randomUUID;
+import dev.langchain4j.utils.AlloyDBTestUtils;
 
 public class AlloyDBEngineIT {
 
@@ -25,7 +25,7 @@ public class AlloyDBEngineIT {
     private static final String CUSTOM_SCHEMA = "custom_schema";
     private static final Integer VECTOR_SIZE = 768;
     private static EmbeddingStoreConfig defaultParameters;
-    private static String IAM_EMAIL;
+    private static String iamEmail;
     private static String projectId;
     private static String region;
     private static String cluster;
@@ -46,9 +46,9 @@ public class AlloyDBEngineIT {
         database = System.getenv("ALLOYDB_DB_NAME");
         user = System.getenv("ALLOYDB_USER");
         password = System.getenv("ALLOYDB_PASSWORD");
-        IAM_EMAIL = System.getenv("ALLOYDB_IAM_EMAIL");
+        iamEmail = System.getenv("ALLOYDB_IAM_EMAIL");
 
-        engine = AlloyDBEngine.builder().projectId(projectId).region(region).cluster(cluster).instance(instance).database(database).user(user).password(password).ipType("PUBLIC").build();
+        engine = new AlloyDBEngine.Builder().projectId(projectId).region(region).cluster(cluster).instance(instance).database(database).user(user).password(password).ipType("PUBLIC").build();
 
         defaultConnection = engine.getConnection();
 
@@ -71,19 +71,6 @@ public class AlloyDBEngineIT {
         defaultConnection.close();
     }
 
-    private void verifyColumns(String tableName, Set<String> expectedColumns) throws SQLException {
-        Set<String> actualNames = new HashSet<>();
-
-        try (ResultSet resultSet = engine.getConnection().createStatement().executeQuery("SELECT * FROM " + tableName)) {
-            ResultSetMetaData rsMeta = resultSet.getMetaData();
-            int columnCount = rsMeta.getColumnCount();
-            for (int i = 1; i <= columnCount; i++) {
-                actualNames.add(rsMeta.getColumnName(i));
-            }
-            assertThat(actualNames).isEqualTo(expectedColumns);
-        }
-    }
-
     @Test
     void initialize_vector_table_with_default_schema() throws SQLException {
         // default options
@@ -95,7 +82,7 @@ public class AlloyDBEngineIT {
         expectedNames.add("content");
         expectedNames.add("embedding");
 
-        verifyColumns(String.format("\"public\".\"%s\"", TABLE_NAME), expectedNames);
+        AlloyDBTestUtils.verifyColumns(defaultConnection, String.format("\"public\".\"%s\"", TABLE_NAME), expectedNames);
 
     }
 
@@ -112,7 +99,7 @@ public class AlloyDBEngineIT {
         expectedColumns.add("overwritten");
         expectedColumns.add("embedding");
 
-        verifyColumns(String.format("\"%s\"", TABLE_NAME), expectedColumns);
+        AlloyDBTestUtils.verifyColumns(defaultConnection, String.format("\"%s\"", TABLE_NAME), expectedColumns);
 
     }
 
@@ -133,7 +120,7 @@ public class AlloyDBEngineIT {
         expectedColumns.add("source");
         expectedColumns.add("custom_metadata_json_column");
 
-        verifyColumns(String.format("\"%s\".\"%s\"", CUSTOM_SCHEMA, CUSTOM_TABLE_NAME), expectedColumns);
+        AlloyDBTestUtils.verifyColumns(defaultConnection, String.format("\"%s\".\"%s\"", CUSTOM_SCHEMA, CUSTOM_TABLE_NAME), expectedColumns);
 
     }
 
@@ -166,7 +153,7 @@ public class AlloyDBEngineIT {
 
     @Test
     void create_engine_with_iam_auth() throws SQLException {
-        AlloyDBEngine iam_engine = AlloyDBEngine.builder().projectId(projectId).region(region).cluster(cluster).instance(instance).database(database).ipType("PUBLIC").iamAccountEmail(IAM_EMAIL).build();
+        AlloyDBEngine iam_engine = new AlloyDBEngine.Builder().projectId(projectId).region(region).cluster(cluster).instance(instance).database(database).ipType("PUBLIC").iamAccountEmail(iamEmail).build();
         try (Connection connection = iam_engine.getConnection();) {
             ResultSet rs = connection.createStatement().executeQuery("SELECT 1");
             rs.next();
@@ -176,7 +163,7 @@ public class AlloyDBEngineIT {
 
     @Test
     void create_engine_with_get_iam_email() throws SQLException {
-        AlloyDBEngine iam_engine = AlloyDBEngine.builder().projectId(projectId).region(region).cluster(cluster).instance(instance).database(database).ipType("PUBLIC").build();
+        AlloyDBEngine iam_engine = new AlloyDBEngine.Builder().projectId(projectId).region(region).cluster(cluster).instance(instance).database(database).ipType("PUBLIC").build();
         try (Connection connection = iam_engine.getConnection();) {
             ResultSet rs = connection.createStatement().executeQuery("SELECT 1");
             rs.next();

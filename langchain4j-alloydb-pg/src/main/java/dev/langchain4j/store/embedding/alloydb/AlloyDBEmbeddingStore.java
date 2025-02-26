@@ -30,6 +30,7 @@ import static dev.langchain4j.internal.Utils.randomUUID;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.index.DistanceStrategy;
 
 public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
 
@@ -221,7 +222,7 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
         addAll(singletonList(id), singletonList(embedding), singletonList(textSegment));
     }
 
-    @Override
+    //@Override
     public void addAll(List<String> ids, List<Embedding> embeddings, List<TextSegment> textSegments) {
         if (ids.size() != embeddings.size() || embeddings.size() != textSegments.size()) {
             throw new IllegalArgumentException("List parameters ids and embeddings and textSegments shouldn't be different sizes!");
@@ -292,7 +293,7 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
         }
     }
 
-    public class Builder {
+    public static class Builder {
 
         private AlloyDBEngine engine;
         private String tableName;
@@ -303,7 +304,7 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
         private List<String> metadataColumns = new ArrayList<>();
         private String metadataJsonColumn = "langchain_metadata";
         private List<String> ignoreMetadataColumnNames = new ArrayList<>();
-        private DistanceStrategy distanceStrategy = distanceStrategy.COSINE_DISTANCE;
+        private DistanceStrategy distanceStrategy = DistanceStrategy.COSINE_DISTANCE;
         private Integer k = 4;
         private Integer fetchK = 20;
         private Double lambdaMult = 0.5;
