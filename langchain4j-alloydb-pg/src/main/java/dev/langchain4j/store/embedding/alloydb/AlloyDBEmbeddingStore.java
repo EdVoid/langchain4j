@@ -5,8 +5,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import static java.util.Collections.singletonList;
@@ -20,22 +22,29 @@ import static java.util.stream.Collectors.toList;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import static com.fasterxml.jackson.databind.SerializationFeature.INDENT_OUTPUT;
+import com.pgvector.PGvector;
 
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.engine.AlloyDBEngine;
+import static dev.langchain4j.internal.Utils.getOrDefault;
+import static dev.langchain4j.internal.Utils.isNotNullOrBlank;
 import static dev.langchain4j.internal.Utils.isNotNullOrEmpty;
 import static dev.langchain4j.internal.Utils.randomUUID;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
+import dev.langchain4j.store.embedding.filter.AlloyDBFilterMapper;
 import dev.langchain4j.store.embedding.index.DistanceStrategy;
+import dev.langchain4j.store.embedding.index.query.QueryOptions;
 
 public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
             .enable(INDENT_OUTPUT);
+    private final AlloyDBFilterMapper FILTER_MAPPER = new AlloyDBFilterMapper();
     private final AlloyDBEngine engine;
     private final String tableName;
     private final String schemaName;
@@ -44,11 +53,7 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
     private final String idColumn;
     private final List<String> metadataColumns;
     private final DistanceStrategy distanceStrategy;
-    private final Integer k;
-    private final Integer fetchK;
-    private final Double lambdaMult;
-    // change to QueryOptions class when implemented
-    private final List<String> queryOptions;
+    private final QueryOptions queryOptions;
     private String metadataJsonColumn;
 
     /**
@@ -70,12 +75,6 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
      * pre-existing tables for a document’s
      * @param distanceStrategy (Defaults: COSINE_DISTANCE) Distance strategy to
      * use for vector similarity search
-     * @param k (Defaults: 4) Number of Documents to return from search
-     * @param fetchK (Defaults: 20) Number of Documents to fetch to pass to MMR
-     * algorithm
-     * @param lambdaMult (Defaults: 0.5): Number between 0 and 1 that determines
-     * the degree of diversity among the results with 0 corresponding to maximum
-     * diversity and 1 to minimum diversity
      * @param queryOptions (Optional) QueryOptions class with vector search
      * parameters
      */
@@ -89,9 +88,6 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
         this.metadataJsonColumn = builder.metadataJsonColumn;
         this.metadataColumns = builder.metadataColumns;
         this.distanceStrategy = builder.distanceStrategy;
-        this.k = builder.k;
-        this.fetchK = builder.fetchK;
-        this.lambdaMult = builder.lambdaMult;
         this.queryOptions = builder.queryOptions;
 
         // check columns exist in the table
@@ -197,7 +193,71 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
 
     @Override
     public EmbeddingSearchResult<TextSegment> search(EmbeddingSearchRequest request) {
-        throw new UnsupportedOperationException("Not supported yet.");
+        List<String> columns = new ArrayList(metadataColumns);
+        columns.add(idColumn);
+        columns.add(contentColumn);
+        columns.add(embeddingColumn);
+        if (isNotNullOrBlank(metadataJsonColumn)) {
+            columns.add(metadataJsonColumn);
+        }
+
+        String columnNames = columns.stream().map(c -> String.format("\"%s\"", c)).collect(Collectors.joining(", "));
+
+        String filterString = FILTER_MAPPER.map(request.filter());
+
+        String whereClause = isNotNullOrBlank(filterString) ? String.format("WHERE %s", filterString) : "";
+
+        String vector = String.format("'%s'", Arrays.toString(request.queryEmbedding().vector()));
+
+        String query = String.format("SELECT %s, %s(%s, %s) as distance FROM \"%s\".\"%s\" %s ORDER BY %s %s %s LIMIT %d;",
+                columnNames, distanceStrategy.getSearchFunction(), embeddingColumn, vector, schemaName, tableName, whereClause,
+                embeddingColumn, distanceStrategy.getOperator(), vector, request.maxResults());
+                
+        List<EmbeddingMatch<TextSegment>> embeddingMatches = new ArrayList<>();
+
+        try (Connection conn = engine.getConnection()) {
+            try (Statement statement = conn.createStatement()) {
+                if (queryOptions != null) {
+                    for (String option : queryOptions.getParameterSettings()) {
+                        statement.executeQuery(String.format("SET LOCAL %s;", option));
+                    }
+                }
+                ResultSet resultSet = statement.executeQuery(query);
+                while (resultSet.next()) {
+                    double distance = resultSet.getDouble("distance");
+                    String embeddingId = resultSet.getString(idColumn);
+
+                    PGvector pgVector = (PGvector) resultSet.getObject(embeddingColumn);
+
+                    Embedding embedding = Embedding.from(pgVector.toArray());
+
+                    String embeddedText = resultSet.getString(contentColumn);
+                    Map<String, Object> metadataMap = new HashMap<>();
+
+                    for(String metaColumn : metadataColumns) {
+                        metadataMap.put(metaColumn, resultSet.getObject(metaColumn));
+                    }
+
+                    if(isNotNullOrBlank(metadataJsonColumn)) {
+                        String metadataJsonString = getOrDefault(resultSet.getString(metadataJsonColumn), "{}");
+                        Map<String, Object> metadataJsonMap = OBJECT_MAPPER.readValue(metadataJsonString, Map.class);
+                        metadataMap.putAll(metadataJsonMap);
+                    }
+                    
+                    Metadata metadata = Metadata.from(metadataMap);
+
+                    TextSegment embedded = new TextSegment(embeddedText, metadata);
+
+                    embeddingMatches.add(new EmbeddingMatch<>(distance, embeddingId, embedding, embedded));
+                }
+            } catch (JsonProcessingException ex) {
+                throw new RuntimeException("Exception caught when processing JSON metadata", ex);
+            }
+        } catch (SQLException ex) {
+            throw new RuntimeException("Exception caught when searching in store table: \"" + schemaName + "\".\"" + tableName + "\"", ex);
+        }
+        return new EmbeddingSearchResult<>(embeddingMatches);
+
     }
 
     @Override
@@ -262,7 +322,7 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
                     Map<String, Object> embeddedMetadataCopy = textSegment.metadata().toMap().entrySet().stream()
                             .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue()));
                     preparedStatement.setString(1, id);
-                    preparedStatement.setObject(2, embedding);
+                    preparedStatement.setObject(2, new PGvector(embedding.vector()));
                     preparedStatement.setString(3, text);
                     int j = 4;
                     if (embeddedMetadataCopy != null && !embeddedMetadataCopy.isEmpty()) {
@@ -307,11 +367,7 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
         private String metadataJsonColumn = "langchain_metadata";
         private List<String> ignoreMetadataColumnNames = new ArrayList<>();
         private DistanceStrategy distanceStrategy = DistanceStrategy.COSINE_DISTANCE;
-        private Integer k = 4;
-        private Integer fetchK = 20;
-        private Double lambdaMult = 0.5;
-        // change to QueryOptions class when implemented
-        private List<String> queryOptions;
+        private QueryOptions queryOptions;
 
         public Builder(AlloyDBEngine engine, String tableName) {
             this.engine = engine;
@@ -390,37 +446,10 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
         }
 
         /**
-         * @param k (Defaults: 4) Number of Documents to return from search
-         */
-        public Builder k(Integer k) {
-            this.k = k;
-            return this;
-        }
-
-        /**
-         * @param fetchK (Defaults: 20) Number of Documents to fetch to pass to
-         * MMR algorithm
-         */
-        public Builder fetchK(Integer fetchK) {
-            this.fetchK = fetchK;
-            return this;
-        }
-
-        /**
-         * @param lambdaMult (Defaults: 0.5): Number between 0 and 1 that
-         * determines the degree of diversity among the results with 0
-         * corresponding to maximum diversity and 1 to minimum diversity
-         */
-        public Builder lambdaMult(Double lambdaMult) {
-            this.lambdaMult = lambdaMult;
-            return this;
-        }
-
-        /**
          * @param queryOptions (Optional) QueryOptions class with vector search
          * parameters
          */
-        public Builder queryOptions(List<String> queryOptions) {
+        public Builder queryOptions(QueryOptions queryOptions) {
             this.queryOptions = queryOptions;
             return this;
         }
