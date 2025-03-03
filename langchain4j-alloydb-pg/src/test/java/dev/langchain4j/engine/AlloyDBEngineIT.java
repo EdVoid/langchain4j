@@ -82,7 +82,7 @@ public class AlloyDBEngineIT {
         expectedNames.add("content");
         expectedNames.add("embedding");
 
-        AlloyDBTestUtils.verifyColumns(defaultConnection, String.format("\"public\".\"%s\"", TABLE_NAME), expectedNames);
+        AlloyDBTestUtils.verifyColumns(defaultConnection, "public", TABLE_NAME, expectedNames);
 
     }
 
@@ -99,7 +99,7 @@ public class AlloyDBEngineIT {
         expectedColumns.add("overwritten");
         expectedColumns.add("embedding");
 
-        AlloyDBTestUtils.verifyColumns(defaultConnection, String.format("\"%s\"", TABLE_NAME), expectedColumns);
+        AlloyDBTestUtils.verifyColumns(defaultConnection, "public", TABLE_NAME, expectedColumns);
 
     }
 
@@ -120,7 +120,7 @@ public class AlloyDBEngineIT {
         expectedColumns.add("source");
         expectedColumns.add("custom_metadata_json_column");
 
-        AlloyDBTestUtils.verifyColumns(defaultConnection, String.format("\"%s\".\"%s\"", CUSTOM_SCHEMA, CUSTOM_TABLE_NAME), expectedColumns);
+        AlloyDBTestUtils.verifyColumns(defaultConnection, CUSTOM_SCHEMA, CUSTOM_TABLE_NAME, expectedColumns);
 
     }
 

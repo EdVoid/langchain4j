@@ -13,11 +13,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class AlloyDBTestUtils {
     private static final Random RANDOM = new Random();
 
-    public static void verifyColumns(Connection connection, String tableName, Set<String> expectedColumns)
+    public static void verifyColumns(Connection connection, String schemaName, String tableName, Set<String> expectedColumns)
             throws SQLException {
         Set<String> actualNames = new HashSet<>();
 
-        ResultSet resultSet = connection.createStatement().executeQuery("SELECT * FROM " + tableName);
+        ResultSet resultSet = connection.createStatement().executeQuery(String.format("SELECT * FROM \"%s\".\"%s\"", schemaName, tableName));
         ResultSetMetaData rsMeta = resultSet.getMetaData();
         int columnCount = rsMeta.getColumnCount();
         for (int i = 1; i <= columnCount; i++) {

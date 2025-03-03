@@ -6,7 +6,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,17 +71,22 @@ public class AlloyDBEmbeddingStoreIT {
         metadataColumns.add(new MetadataColumn("float", "real", true));
         metadataColumns.add(new MetadataColumn("double", "double precision", true));
 
-        embeddingStoreConfig = EmbeddingStoreConfig.builder().tableName(TABLE_NAME).vectorSize(VECTOR_SIZE).metadataColumns(metadataColumns).build();
+        embeddingStoreConfig = EmbeddingStoreConfig.builder().tableName(TABLE_NAME)
+        .vectorSize(VECTOR_SIZE).metadataColumns(metadataColumns).build();
+
+        defaultConnection = engine.getConnection();
+
+        defaultConnection.createStatement().executeUpdate(String.format("DROP TABLE IF EXISTS \"%s\"", TABLE_NAME));
+
         engine.initVectorStoreTable(embeddingStoreConfig);
 
         store = new AlloyDBEmbeddingStore.Builder(engine, TABLE_NAME).build();
-        defaultConnection = engine.getConnection();
 
     }
 
     @AfterEach
     public void afterEach() throws SQLException {
-        defaultConnection.createStatement().executeUpdate(String.format("TRUNCATE TABLE IF EXISTS \"%s\"", TABLE_NAME));
+        defaultConnection.createStatement().executeUpdate(String.format("TRUNCATE TABLE \"%s\"", TABLE_NAME));
     }
 
     @AfterAll

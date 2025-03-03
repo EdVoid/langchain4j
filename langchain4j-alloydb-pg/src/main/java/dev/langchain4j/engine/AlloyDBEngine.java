@@ -148,6 +148,9 @@ public class AlloyDBEngine {
                     embeddingStoreConfig.getSchemaName(), embeddingStoreConfig.getTableName(),
                     embeddingStoreConfig.getIdColumn(), embeddingStoreConfig.getContentColumn(),
                     embeddingStoreConfig.getEmbeddingColumn(), embeddingStoreConfig.getVectorSize(), metadataClause);
+
+                    System.out.println("***********************");
+                    System.out.println(query);
             statement.executeUpdate(query);
         } catch (SQLException ex) {
             throw new RuntimeException(String.format("Failed to initialize vector store table: \"%s\".\"%s\"",
