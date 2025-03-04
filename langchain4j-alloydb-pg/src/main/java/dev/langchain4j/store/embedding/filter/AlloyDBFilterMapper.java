@@ -4,7 +4,6 @@ import java.util.Collection;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import dev.langchain4j.store.embedding.filter.comparison.ContainsString;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import dev.langchain4j.store.embedding.filter.comparison.IsGreaterThan;
 import dev.langchain4j.store.embedding.filter.comparison.IsGreaterThanOrEqualTo;
@@ -37,8 +36,6 @@ public class AlloyDBFilterMapper {
             return mapIn(isIn);
         } else if (filter instanceof IsNotIn isNotIn) {
             return mapNotIn(isNotIn);
-        } else if (filter instanceof ContainsString containsString) {
-            return mapContainsString(containsString);
         } else if (filter instanceof And and) {
             return mapAnd(and);
         } else if (filter instanceof Not not) {
@@ -89,10 +86,6 @@ public class AlloyDBFilterMapper {
     private String mapNotIn(IsNotIn isNotIn) {
         String key = isNotIn.key();
         return String.format("\"%s\" IS NULL OR \"%s\" NOT IN %s", key, key, formatValuesAsString(isNotIn.comparisonValues()));
-    }
-
-    private String mapContainsString(ContainsString containsString) {
-        return String.format("\"%s\" ILIKE '%%%s%%'", containsString.key(), formatValue(containsString.comparisonValue()));
     }
 
     private String mapAnd(And and) {

@@ -36,7 +36,7 @@ public class AlloyDBEmbeddingStoreIT {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
     .enable(INDENT_OUTPUT);
     private static final String TABLE_NAME = "JAVA_EMBEDDING_TEST_TABLE";
-    private static final Integer VECTOR_SIZE = 768;
+    private static final Integer VECTOR_SIZE = 5;
     private static EmbeddingStoreConfig embeddingStoreConfig;
     private static String projectId;
     private static String region;

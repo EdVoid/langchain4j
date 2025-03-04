@@ -144,12 +144,10 @@ public class AlloyDBEngine {
                 metadataClause += String.format(", %s", new MetadataColumn(
                     embeddingStoreConfig.getMetadataJsonColumn(), "JSON", true).generateColumnString());
             }
-            String query = String.format("CREATE TABLE \"%s\".\"%s\" (\"%s\" UUID PRIMARY KEY, \"%s\" TEXT NOT NULL, \"%s\" vector(%d) NOT NULL%s)",
+            String query = String.format("CREATE TABLE \"%s\".\"%s\" (\"%s\" TEXT PRIMARY KEY, \"%s\" TEXT NULL, \"%s\" vector(%d) NOT NULL%s)",
                     embeddingStoreConfig.getSchemaName(), embeddingStoreConfig.getTableName(),
                     embeddingStoreConfig.getIdColumn(), embeddingStoreConfig.getContentColumn(),
                     embeddingStoreConfig.getEmbeddingColumn(), embeddingStoreConfig.getVectorSize(), metadataClause);
-
-                    System.out.println("***********************");
                     System.out.println(query);
             statement.executeUpdate(query);
         } catch (SQLException ex) {

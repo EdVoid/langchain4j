@@ -19,6 +19,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import static java.util.stream.Collectors.toList;
 
+import org.postgresql.util.PGobject;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import static com.fasterxml.jackson.databind.SerializationFeature.INDENT_OUTPUT;
@@ -165,8 +167,7 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
 
     @Override
     public void add(String id, Embedding embedding) {
-        TextSegment empty = new TextSegment("", new Metadata());
-        addInternal(id, embedding, empty);
+        addInternal(id, embedding, null);
     }
 
     @Override
@@ -179,7 +180,7 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
     @Override
     public List<String> addAll(List<Embedding> embeddings) {
         List<String> ids = embeddings.stream().map(ignored -> randomUUID()).collect(toList());
-        List<TextSegment> emptyTextSegments = Collections.nCopies(ids.size(), new TextSegment("", new Metadata()));
+        List<TextSegment> emptyTextSegments = Collections.nCopies(ids.size(), null);
         addAll(ids, embeddings, emptyTextSegments);
         return ids;
     }
@@ -311,16 +312,15 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
                 placeholders += ", ?";
             }
 
-            String query = String.format("INSERT INTO \"%s\".\"%s\" (\"%s\", \"%s\", \"%s\"%s) VALUES (%s)", schemaName, tableName, idColumn, contentColumn, embeddingColumn, metadataColumnNames, placeholders);
+            String query = String.format("INSERT INTO \"%s\".\"%s\" (\"%s\", \"%s\", \"%s\"%s) VALUES (%s)", schemaName, tableName, idColumn, embeddingColumn, contentColumn, metadataColumnNames, placeholders);
             try (PreparedStatement preparedStatement = connection.prepareStatement(query)) {
                 for (int i = 0; i < ids.size(); i++) {
                     String id = ids.get(i);
                     Embedding embedding = embeddings.get(i);
                     TextSegment textSegment = textSegments.get(i);
                     String text = textSegment != null ? textSegment.text() : null;
-                    //assume metadata is always present langchain4j/langchain4j-core/src/main/java/dev/langchain4j/data/segment/TextSegment.java L30
-                    Map<String, Object> embeddedMetadataCopy = textSegment.metadata().toMap().entrySet().stream()
-                            .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue()));
+                    Map<String, Object> embeddedMetadataCopy = textSegment != null ? textSegment.metadata().toMap().entrySet().stream()
+                            .collect(Collectors.toMap(e -> e.getKey(), e -> e.getValue())) : null;
                     preparedStatement.setString(1, id);
                     preparedStatement.setObject(2, new PGvector(embedding.vector()));
                     preparedStatement.setString(3, text);
@@ -345,6 +345,7 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
                     preparedStatement.addBatch();
 
                 }
+                System.out.println(preparedStatement);
                 preparedStatement.executeBatch();
             } catch (JsonProcessingException ex) {
                 throw new RuntimeException("Exception caught when processing JSON metadata", ex);
