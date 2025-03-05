@@ -72,7 +72,7 @@ public class AlloyDBEmbeddingStoreIT {
         metadataColumns.add(new MetadataColumn("double", "double precision", true));
 
         embeddingStoreConfig = EmbeddingStoreConfig.builder().tableName(TABLE_NAME)
-        .vectorSize(VECTOR_SIZE).metadataColumns(metadataColumns).build();
+        .vectorSize(VECTOR_SIZE).metadataColumns(metadataColumns).storeMetadata(true).build();
 
         defaultConnection = engine.getConnection();
 
@@ -80,7 +80,9 @@ public class AlloyDBEmbeddingStoreIT {
 
         engine.initVectorStoreTable(embeddingStoreConfig);
 
-        store = new AlloyDBEmbeddingStore.Builder(engine, TABLE_NAME).build();
+        List<String> metaColumnNames = metadataColumns.stream().map(c -> c.getName()).collect(Collectors.toList());
+
+        store = new AlloyDBEmbeddingStore.Builder(engine, TABLE_NAME).metadataColumns(metaColumnNames).build();
 
     }
 
@@ -170,26 +172,17 @@ public class AlloyDBEmbeddingStoreIT {
                     .filter(e -> !e.getKey().contains("extra")).map(e -> "\"" + e.getKey() + "\"").collect(Collectors.joining(", "));
 
         try(Statement statement = defaultConnection.createStatement();) {
-            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\", %s FROM \"%s\" WHERE \"%s\" = '%s'",
-             embeddingStoreConfig.getEmbeddingColumn(), metadataColumnNames, TABLE_NAME, embeddingStoreConfig.getIdColumn(), id));
-System.out.println(String.format("SELECT \"%s\", %s FROM \"%s\" WHERE \"%s\" = '%s'",
-embeddingStoreConfig.getEmbeddingColumn(), metadataColumnNames, TABLE_NAME, embeddingStoreConfig.getIdColumn(), id));
+            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\", %s, \"%s\" FROM \"%s\" WHERE \"%s\" = '%s'",
+             embeddingStoreConfig.getEmbeddingColumn(), metadataColumnNames, embeddingStoreConfig.getMetadataJsonColumn(), TABLE_NAME, embeddingStoreConfig.getIdColumn(), id));
             Map<String, Object> extraMetaMap = new HashMap<>();
             Map<String, Object> metadataJsonMap = null;
             while(rs.next()) {
-
-                for(int i = 1; i <= rs.getMetaData().getColumnCount(); i++){
-                    System.out.println(rs.getString(i));
-                }
                 String response = rs.getString(embeddingStoreConfig.getEmbeddingColumn());
                 assertThat(response).isEqualTo(Arrays.toString(vector).replaceAll("\s", ""));
                 for(String column : metaMap.keySet()) {
                     if(column.contains("extra")) {
                         extraMetaMap.put(column, metaMap.get(column));
                     } else {
-                        System.out.println(column);
-                        System.out.println(rs.getObject(column));
-
                         assertThat(rs.getObject(column)).isEqualTo(metaMap.get(column));
                     }
                 }
@@ -235,8 +228,8 @@ embeddingStoreConfig.getEmbeddingColumn(), metadataColumnNames, TABLE_NAME, embe
                     .filter(e -> !e.getKey().contains("extra")).map(e -> "\"" + e.getKey() + "\"").collect(Collectors.joining(", "));
 
         try(Statement statement = defaultConnection.createStatement();) {
-            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\", %s FROM \"%s\" WHERE \"%s\" IN (%s)",
-             embeddingStoreConfig.getEmbeddingColumn(), metadataColumnNames, TABLE_NAME, embeddingStoreConfig.getIdColumn(), stringIds));
+            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\", %s ,\"%s\" FROM \"%s\" WHERE \"%s\" IN (%s)",
+             embeddingStoreConfig.getEmbeddingColumn(), metadataColumnNames, embeddingStoreConfig.getMetadataJsonColumn(), TABLE_NAME, embeddingStoreConfig.getIdColumn(), stringIds));
             Map<String, Object> extraMetaMap = new HashMap<>();
             Map<String, Object> metadataJsonMap = null;
             while(rs.next()) {

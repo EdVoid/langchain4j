@@ -13,14 +13,11 @@ import java.util.Collection;
 import java.util.Collections;
 import static java.util.Collections.singletonList;
 import java.util.HashMap;
-import java.util.Map.Entry;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import static java.util.stream.Collectors.toList;
-
-import org.postgresql.util.PGobject;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -154,7 +151,6 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
                 metadataColumns.addAll(allColumnsCopy.keySet());
             }
 
-            System.out.println(metadataColumns.get(0));
 
         } catch (SQLException ex) {
             throw new RuntimeException("Exception caught when verifying vector store table: \"" + schemaName + "\".\"" + tableName + "\"", ex);
@@ -328,24 +324,24 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
                     preparedStatement.setObject(2, new PGvector(embedding.vector()));
                     preparedStatement.setString(3, text);
                     int j = 0;
-System.out.println("meta size "+metadataColumns.size());
                     if (embeddedMetadataCopy != null && !embeddedMetadataCopy.isEmpty()) {
                         for (; j < metadataColumns.size(); j++) {
-                            System.out.println("looking for " + metadataColumns.get(j));
                             if (embeddedMetadataCopy.containsKey(metadataColumns.get(j))) {
-                                preparedStatement.setObject(j+4, embeddedMetadataCopy.remove(metadataColumns.get(j)));
+                                preparedStatement.setObject(j + 4, embeddedMetadataCopy.remove(metadataColumns.get(j)));
                             } else {
-                                preparedStatement.setObject(j+4, null);
+                                preparedStatement.setObject(j + 4, null);
                             }
                         }
                         if (isNotNullOrEmpty(metadataJsonColumn)) {
                             // metadataJsonColumn should be the last column left
-                            preparedStatement.setObject(j, OBJECT_MAPPER.writeValueAsString(embeddedMetadataCopy), Types.OTHER);
+                            preparedStatement.setObject(j + 4, OBJECT_MAPPER.writeValueAsString(embeddedMetadataCopy), Types.OTHER);
                         }
                     } else {
-                        System.out.println("all nulls");
                         for (; j < metadataColumns.size(); j++) {
-                            preparedStatement.setObject(j+4, null);
+                            preparedStatement.setObject(j + 4, null);
+                        }
+                        if (isNotNullOrEmpty(metadataJsonColumn)) {
+                            preparedStatement.setObject(j + 4, null);
                         }
                     }
                     preparedStatement.addBatch();
