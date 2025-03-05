@@ -102,11 +102,11 @@ public class AlloyDBEmbeddingStoreIT {
         String id = store.add(embedding);
 
         try(Statement statement = defaultConnection.createStatement();) {
-            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\" FROM \"%s\" WHERE \"%s\" = %s",
+            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\" FROM \"%s\" WHERE \"%s\" = '%s'",
              embeddingStoreConfig.getEmbeddingColumn(),TABLE_NAME, embeddingStoreConfig.getIdColumn(), id));
             rs.next();
             String response = rs.getString(embeddingStoreConfig.getEmbeddingColumn());
-            assertThat(response).isEqualTo(Arrays.toString(vector));
+            assertThat(response).isEqualTo(Arrays.toString(vector).replaceAll("\s", ""));
         }
     }
 
@@ -116,14 +116,15 @@ public class AlloyDBEmbeddingStoreIT {
         List<Embedding> embeddings = new ArrayList<>();
         for(int i = 0; i < 10; i++){
             float[] vector = randomVector(5);
-            expectedVectors.add(Arrays.toString(vector));
+            expectedVectors.add(Arrays.toString(vector).replaceAll("\s", ""));
             embeddings.add(new Embedding(vector));
         }
-        String ids = String.join(",", store.addAll(embeddings));
+        List<String> ids = store.addAll(embeddings);
+        String stringIds = ids.stream().map(id -> String.format("'%s'", id)).collect(Collectors.joining(","));
 
         try(Statement statement = defaultConnection.createStatement();) {
             ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\" FROM \"%s\" WHERE \"%s\" IN (%s)",
-             embeddingStoreConfig.getEmbeddingColumn(),TABLE_NAME, embeddingStoreConfig.getIdColumn(), ids));
+             embeddingStoreConfig.getEmbeddingColumn(),TABLE_NAME, embeddingStoreConfig.getIdColumn(), stringIds));
             while(rs.next()) {
                 String response = rs.getString(embeddingStoreConfig.getEmbeddingColumn());
                 assertThat(expectedVectors).contains(response);
@@ -139,11 +140,11 @@ public class AlloyDBEmbeddingStoreIT {
         store.add(id, embedding);
 
         try(Statement statement = defaultConnection.createStatement();) {
-            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\" FROM \"%s\" WHERE \"%s\" = %s",
+            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\" FROM \"%s\" WHERE \"%s\" = '%s'",
              embeddingStoreConfig.getEmbeddingColumn(),TABLE_NAME, embeddingStoreConfig.getIdColumn(), id));
             rs.next();
             String response = rs.getString(embeddingStoreConfig.getEmbeddingColumn());
-            assertThat(response).isEqualTo(Arrays.toString(vector));
+            assertThat(response).isEqualTo(Arrays.toString(vector).replaceAll("\s", ""));
         }
     }
 
@@ -169,19 +170,27 @@ public class AlloyDBEmbeddingStoreIT {
                     .filter(e -> !e.getKey().contains("extra")).map(e -> "\"" + e.getKey() + "\"").collect(Collectors.joining(", "));
 
         try(Statement statement = defaultConnection.createStatement();) {
-            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\" %s FROM \"%s\" WHERE \"%s\" = %s",
+            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\", %s FROM \"%s\" WHERE \"%s\" = '%s'",
              embeddingStoreConfig.getEmbeddingColumn(), metadataColumnNames, TABLE_NAME, embeddingStoreConfig.getIdColumn(), id));
+System.out.println(String.format("SELECT \"%s\", %s FROM \"%s\" WHERE \"%s\" = '%s'",
+embeddingStoreConfig.getEmbeddingColumn(), metadataColumnNames, TABLE_NAME, embeddingStoreConfig.getIdColumn(), id));
             Map<String, Object> extraMetaMap = new HashMap<>();
             Map<String, Object> metadataJsonMap = null;
-            // TODO should be single
             while(rs.next()) {
+
+                for(int i = 1; i <= rs.getMetaData().getColumnCount(); i++){
+                    System.out.println(rs.getString(i));
+                }
                 String response = rs.getString(embeddingStoreConfig.getEmbeddingColumn());
-                assertThat(response).isEqualTo(Arrays.toString(vector));
+                assertThat(response).isEqualTo(Arrays.toString(vector).replaceAll("\s", ""));
                 for(String column : metaMap.keySet()) {
                     if(column.contains("extra")) {
                         extraMetaMap.put(column, metaMap.get(column));
                     } else {
-                        assertThat(metaMap.get(column)).isEqualTo(rs.getObject(column));
+                        System.out.println(column);
+                        System.out.println(rs.getObject(column));
+
+                        assertThat(rs.getObject(column)).isEqualTo(metaMap.get(column));
                     }
                 }
                 String metadataJsonString = getOrDefault(rs.getString(embeddingStoreConfig.getMetadataJsonColumn()), "{}");
@@ -203,7 +212,7 @@ public class AlloyDBEmbeddingStoreIT {
 
         for(int i = 0; i < 10; i++){
             float[] vector = randomVector(5);
-            expectedVectorsAndIndexes.put(Arrays.toString(vector), i);
+            expectedVectorsAndIndexes.put(Arrays.toString(vector).replaceAll("\s",""), i);
             embeddings.add(new Embedding(vector));
             Map<String, Object> metaMap = new HashMap();
             metaMap.put("string", "s" + i);
@@ -220,13 +229,13 @@ public class AlloyDBEmbeddingStoreIT {
         }
 
         List<String> ids = store.addAll(embeddings, textSegments);
-        String stringIds = String.join(",", ids);
+        String stringIds = ids.stream().map(id -> String.format("'%s'", id)).collect(Collectors.joining(","));
 
         String metadataColumnNames = metaMaps.get(0).entrySet().stream()
                     .filter(e -> !e.getKey().contains("extra")).map(e -> "\"" + e.getKey() + "\"").collect(Collectors.joining(", "));
 
         try(Statement statement = defaultConnection.createStatement();) {
-            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\" %s FROM \"%s\" WHERE \"%s\" IN (%s)",
+            ResultSet rs = statement.executeQuery(String.format("SELECT \"%s\", %s FROM \"%s\" WHERE \"%s\" IN (%s)",
              embeddingStoreConfig.getEmbeddingColumn(), metadataColumnNames, TABLE_NAME, embeddingStoreConfig.getIdColumn(), stringIds));
             Map<String, Object> extraMetaMap = new HashMap<>();
             Map<String, Object> metadataJsonMap = null;
@@ -238,7 +247,7 @@ public class AlloyDBEmbeddingStoreIT {
                     if(column.contains("extra")) {
                         extraMetaMap.put(column, metaMaps.get(index).get(column));
                     } else {
-                        assertThat(metaMaps.get(index).get(column)).isEqualTo(rs.getObject(column));
+                        assertThat(rs.getObject(column)).isEqualTo(metaMaps.get(index).get(column));
                     }
                 }
                 String metadataJsonString = getOrDefault(rs.getString(embeddingStoreConfig.getMetadataJsonColumn()), "{}");

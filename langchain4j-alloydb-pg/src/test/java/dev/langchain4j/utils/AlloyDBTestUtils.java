@@ -43,7 +43,7 @@ public class AlloyDBTestUtils {
         float[] vector = new float[length];
 
         for (int i = 0; i < vector.length; i++) {
-            vector[i] = RANDOM.nextFloat();
+            vector[i] = RANDOM.nextFloat()*1000;
         }
 
         return vector;
