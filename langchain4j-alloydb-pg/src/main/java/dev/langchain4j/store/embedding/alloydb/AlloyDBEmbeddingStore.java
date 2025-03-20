@@ -4,6 +4,7 @@ import static com.fasterxml.jackson.databind.SerializationFeature.INDENT_OUTPUT;
 import static dev.langchain4j.internal.Utils.getOrDefault;
 import static dev.langchain4j.internal.Utils.isNotNullOrBlank;
 import static dev.langchain4j.internal.Utils.isNotNullOrEmpty;
+import static dev.langchain4j.internal.Utils.isNullOrBlank;
 import static dev.langchain4j.internal.Utils.randomUUID;
 import static java.util.Collections.singletonList;
 import static java.util.stream.Collectors.toList;
@@ -20,7 +21,9 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.AlloyDBFilterMapper;
+import dev.langchain4j.store.embedding.index.BaseIndex;
 import dev.langchain4j.store.embedding.index.DistanceStrategy;
+import dev.langchain4j.store.embedding.index.ScaNNIndex;
 import dev.langchain4j.store.embedding.index.query.QueryOptions;
 import java.sql.Array;
 import java.sql.Connection;
@@ -377,6 +380,120 @@ public class AlloyDBEmbeddingStore implements EmbeddingStore<TextSegment> {
             throw new RuntimeException(
                     "Exception caught when inserting into vector store table: \"" + schemaName + "\".\"" + tableName
                             + "\"",
+                    ex);
+        }
+    }
+
+    private double calculateRelevanceScore(double distance) {
+        switch (distanceStrategy.name()) {
+            case "EUCLIDEAN" -> {
+                return (1d - (distance / Math.sqrt(2)));
+            }
+            case "COSINE_DISTANCE" -> {
+                return (1d - distance);
+            }
+            case "INNER_PRODUCT" -> {
+                if (distance > 0) {
+                    return (1d - distance);
+                }
+                return (-1d * distance);
+            }
+            default -> {
+                throw new UnsupportedOperationException(String.format(
+                        "Unable to calculate relevance score for search function: %s ",
+                        distanceStrategy.getSearchFunction()));
+            }
+        }
+    }
+
+    /**
+     * Create index in the vector store table
+     * @param index, index to be applied
+     * @param name, name of the index
+     * @param concurrently, CONCURRENTLY option
+     */
+    public void applyVectorIndex(BaseIndex index, String name, Boolean concurrently) {
+        String function;
+        if (index == null) {
+            dropVectorIndex(null);
+            return;
+        }
+        if (isNullOrBlank(name)) {
+            if (isNotNullOrBlank(index.getName())) {
+                name = index.getName();
+            } else {
+                name = tableName + BaseIndex.DEFAULT_INDEX_NAME_SUFFIX;
+            }
+        }
+
+        try (Connection conn = engine.getConnection(); ) {
+            if (index instanceof ScaNNIndex scaNNIndex) {
+                conn.createStatement().executeQuery("CREATE EXTENSION IF NOT EXISTS alloydb_scann");
+                function = scaNNIndex.getDistanceStrategy().getScannIndexFunction();
+            } else {
+                function = index.getDistanceStrategy().getIndexFunction();
+            }
+
+            String filter = (index.getPartialIndexes() != null
+                            && index.getPartialIndexes().isEmpty())
+                    ? String.format("WHERE %s", String.join(", ", index.getPartialIndexes()))
+                    : "";
+            String params = String.format("WITH %s", index.getIndexOptions());
+
+            String concurrentlyString = concurrently ? "CONCURRENTLY" : "";
+
+            String stmt = String.format(
+                    "CREATE INDEX %s %s ON \"%s\".\"%s\" USING %s (%s %s) %s %s;",
+                    concurrentlyString,
+                    name,
+                    schemaName,
+                    tableName,
+                    index.getIndexType(),
+                    embeddingColumn,
+                    function,
+                    params,
+                    filter);
+
+            conn.createStatement().executeQuery(stmt);
+
+        } catch (SQLException ex) {
+            throw new RuntimeException(
+                    "Exception caught when creating " + name + " index in vector store table: \"" + schemaName + "\".\""
+                            + tableName + "\"",
+                    ex);
+        }
+    }
+
+    /**
+     * remove index from the vector store table
+     * @param name, name of the index
+     */
+    public void dropVectorIndex(String name) {
+        name = isNotNullOrBlank(name) ? name : tableName + BaseIndex.DEFAULT_INDEX_NAME_SUFFIX;
+        String query = String.format("DROP INDEX IF EXISTS %s;", name);
+        try (Connection conn = engine.getConnection(); ) {
+            conn.createStatement().executeQuery(query);
+        } catch (SQLException ex) {
+            throw new RuntimeException(
+                    "Exception caught when removing " + name + " index in vector store table: \"" + schemaName + "\".\""
+                            + tableName + "\"",
+                    ex);
+        }
+    }
+
+    /**
+     * re-index thevector store table
+     * @param name, name of the index
+     */
+    public void reindex(String name) {
+        name = isNotNullOrBlank(name) ? name : tableName + BaseIndex.DEFAULT_INDEX_NAME_SUFFIX;
+        String query = String.format("REINDEX INDEX %s;", name);
+        try (Connection conn = engine.getConnection(); ) {
+            conn.createStatement().executeQuery(query);
+        } catch (SQLException ex) {
+            throw new RuntimeException(
+                    "Exception caught when reindexing " + name + " index in vector store table: \"" + schemaName
+                            + "\".\"" + tableName + "\"",
                     ex);
         }
     }
